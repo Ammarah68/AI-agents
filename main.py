@@ -1,74 +1,86 @@
 import os
 from dotenv import load_dotenv
-from agents import Agent, Runner, AsyncOpenAI, OpenAIChatCompletionsModel
-from agents.run import RunConfig
-from game_tools import roll_dice, generate_event
 import chainlit as cl
+from agents import Agent, Runner, AsyncOpenAI, OpenAIChatCompletionsModel, RunConfig
+from travel_tools import get_flights, suggest_hotels
 
+# 🔑 Load environment variables
 load_dotenv()
 client = AsyncOpenAI(
     api_key=os.getenv("GEMINI_API_KEY"),
     base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
-
 )
+
+# 🎯 Setup model + config
 model = OpenAIChatCompletionsModel(model="gemini-2.0-flash", openai_client=client)
 config = RunConfig(model=model, tracing_disabled=True)
 
-narrator_agent = Agent(
-    name= "NarratorAgent",
-    instructions="You narrate the advanture. Ask the player for choices",
+# 🤖 Agents
+destination_agent = Agent(
+    name="DestinationAgent",
+    instructions="You recommend travel destination based on user's mood",
     model=model
 )
 
-monster_agent = Agent(
-    name= "MonsterAgent",
-    instructions="You handle monster encounter using roll_dice and generate_event.",
-   model=model,
-   tools=[roll_dice, generate_event] 
-
+booking_agent = Agent(
+    name="BookingAgent",
+    instructions="You give flight and hotel info using tools",
+    model=model,
+    tools=[get_flights, suggest_hotels]   # keep simple tools
 )
-item_agent = Agent(
-    name="ItemAgent",
-    instructions="You provide Reward or item to the player.",
+
+explore_agent = Agent(
+    name="ExploreAgent",
+    instructions="You suggest food and places to explore in the destination.",
     model=model
-
 )
+
+# 👋 Welcome message
 @cl.on_chat_start
-async def start_chat():
-    await cl.Message(content="🎮 Welcome to Fantasy Adventure Game! Do you enter the forest or turn back?").send()
+async def on_chat_start():
+    await cl.Message(
+        content="👋 Welcome to AI Travel Designer!\nTell me your travel mood (relaxation, adventure, romantic, etc.)"
+    ).send()
 
 
-@cl.on_message
-async def handle_message(message: cl.Message):
-    user_input = message.content
-
-    # Step 1: Narration
-    result1 = await Runner.run(narrator_agent, user_input, run_config=config)
-    await cl.Message(content=f"📖 Story: {result1.final_output}").send()
-
-    # Step 2: Monster encounter
-    result2 = await Runner.run(monster_agent, "Start encounter", run_config=config)
-    await cl.Message(content=f"👹 Encounter: {result2.final_output}").send()
-
-    # Step 3: Reward
-    result3 = await Runner.run(item_agent, "Give reward", run_config=config)
-    await cl.Message(content=f"🎁 Reward: {result3.final_output}").send()
-
-# From here part of simple agent start.......[Which starts after item agent and for chainlit we use above code of cl.on_message]
+#[simple travel agent from here]    
 
 # def main():
-#     print("\U0001F393 Welcome to Fantacy game\n")
-#     choice = input("Do you enter the forest orture back? ->  ")
+#     print("\U0001F393 AI travel Designer\n")
+#     mood = input("whats your travel mood(relaxation/adventure/etc? ->  ")
 
-# result1= Runner.run_sync(narrator_agent, "choice", run_config=config) 
-# print("\n Storyr:", result1.final_output)
+# result1= Runner.run_sync(destination_agent, "mood", run_config=config) 
+# dest = result1.final_output.strip()
+# print("\n Destination Suggested:", dest)
 
-# result2= Runner.run_sync(monster_agent, "Start encounter", run_config=config) 
-# print("\n Encounter:", result2.final_output)
+# result2= Runner.run_sync(booking_agent, dest, run_config=config) 
+# print("\n Booking info:", result2.final_output)
 
-# result3= Runner.run_sync(item_agent, "Give reward", run_config=config) 
-# print("\n REward:", result3.final_output)
+# result3= Runner.run_sync(explor_agent, dest, run_config=config) 
+# print("\n Explore Tips:", result3.final_output)
+
+
 
 # if __name__ == "__main__":
 #     main()
 
+
+#[using chainlit from here]
+
+# 💬 Message handler
+@cl.on_message
+async def on_message(message: cl.Message):
+    mood = message.content
+
+    # 1️⃣ Destination
+    result1 = await Runner.run(destination_agent, mood, run_config=config)
+    dest = result1.final_output.strip()
+    await cl.Message(content=f"🌍 **Destination Suggested:** {dest}").send()
+
+    # 2️⃣ Booking info
+    result2 = await Runner.run(booking_agent, dest, run_config=config)
+    await cl.Message(content=f"🏨 **Booking Info:** {result2.final_output}").send()
+
+    # 3️⃣ Explore tips
+    result3 = await Runner.run(explore_agent, dest, run_config=config)
+    await cl.Message(content=f"🍽️ **Explore Tips:** {result3.final_output}").send()
